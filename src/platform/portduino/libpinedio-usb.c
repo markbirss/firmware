@@ -455,7 +455,7 @@ int32_t pinedio_get_irq_state(struct pinedio_inst *inst)
     if (ret != 0) {
         return ret;
     }
-    return (input & (1 << 10)) != 0 ? 1 : 0;
+    return (input & (1 << 6)) != 0 ? 1 : 0;
 }
 
 static void *pinedio_pin_poll_thread(void *arg)
@@ -464,7 +464,7 @@ static void *pinedio_pin_poll_thread(void *arg)
     int32_t ret = 0;
     bool should_exit = false;
     uint32_t pin_masks[PINEDIO_INT_PIN_MAX];
-    pin_masks[PINEDIO_INT_PIN_IRQ] = 1 << 10;
+    pin_masks[PINEDIO_INT_PIN_IRQ] = 1 << 6;
 
     uint32_t input;
     //  pin_masks[PINEDIO_INT_PIN_BUSY] = 10 << 1;
