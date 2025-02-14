@@ -28,7 +28,8 @@ class DEPG0290BNS800 : public SSD16XX
     static constexpr UpdateTypes supported = (UpdateTypes)(FULL | FAST);
 
   public:
-    DEPG0290BNS800() : SSD16XX(width, height, supported, 1) {} // Note: left edge of this display is offset by 1 byte
+    //DEPG0290BNS800() : SSD16XX(width, height, supported, 1) {} // Note: left edge of this display is offset by 1 byte
+    DEPG0290BNS800() : SSD16XX(width, height, supported, 0) {}
 
   protected:
     void configVoltages() override;
