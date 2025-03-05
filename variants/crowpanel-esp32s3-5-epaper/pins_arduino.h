@@ -20,7 +20,7 @@ static const uint8_t SCK = 3;
 #define SPI_SCK (39)
 #define SPI_MISO (13)
 #define SPI_CS (10)
-//IO42 TF_3V3_CTL
+// IO42 TF_3V3_CTL
 #define SDCARD_CS SPI_CS
 
 #endif /* Pins_Arduino_h */
