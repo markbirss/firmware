@@ -78,7 +78,7 @@
 #undef FONT_SMALL
 #undef FONT_MEDIUM
 #undef FONT_LARGE
-#define FONT_SMALL FONT_LARGE_LOCAL // Height: 28
+#define FONT_SMALL FONT_LARGE_LOCAL  // Height: 28
 #define FONT_MEDIUM FONT_LARGE_LOCAL // Height: 28
 #define FONT_LARGE FONT_LARGE_LOCAL  // Height: 28
 #endif
