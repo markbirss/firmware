@@ -9,21 +9,21 @@
 #define PIN_EINK_RES 47
 #define PIN_EINK_SCLK 12
 #define PIN_EINK_MOSI 11
-#define PIN_EINK_EN_IN 7  //EINK enable power pin but inverted
+#define PIN_EINK_EN_IN 7 // EINK enable power pin but inverted
 
 #define PIN_TF_EN 42 // TF/SD Card Power Enable Pin
 
-//#define BATTERY_PIN 1 // A battery voltage measurement pin, voltage divider connected here to
-// measure battery voltage ratio of voltage divider = 2.0 (assumption)
-//#define ADC_MULTIPLIER 2.11 // 2.0 + 10% for correction of display undervoltage.
-//#define ADC_CHANNEL ADC1_GPIO1_CHANNEL
+// #define BATTERY_PIN 1 // A battery voltage measurement pin, voltage divider connected here to
+//  measure battery voltage ratio of voltage divider = 2.0 (assumption)
+// #define ADC_MULTIPLIER 2.11 // 2.0 + 10% for correction of display undervoltage.
+// #define ADC_CHANNEL ADC1_GPIO1_CHANNEL
 
-#define I2C_SDA SDA //21
-#define I2C_SCL SCL //15
+#define I2C_SDA SDA // 21
+#define I2C_SCL SCL // 15
 
 #define GPS_DEFAULT_NOT_PRESENT 1
-//#define GPS_RX_PIN 44
-//#define GPS_TX_PIN 43
+// #define GPS_RX_PIN 44
+// #define GPS_TX_PIN 43
 
 #define LED_PIN 41
 #define BUTTON_PIN 2
@@ -41,9 +41,9 @@
 
 // TTGO uses a common pinout for their SX1262 vs RF95 modules - both can be enabled and
 // we will probe at runtime for RF95 and if not found then probe for SX1262
-//#define USE_RF95 // RFM95/SX127x
+// #define USE_RF95 // RFM95/SX127x
 #define USE_SX1262
-//#define USE_SX1280
+// #define USE_SX1280
 
 #define LORA_SCK 3
 #define LORA_MISO 9
@@ -51,9 +51,8 @@
 #define LORA_CS 14
 #define LORA_RESET 38
 
-#define LORA_DIO1 16 
+#define LORA_DIO1 16
 #define LORA_DIO2 17
-
 
 // per SX1262_Receive_Interrupt/utilities.h
 #ifdef USE_SX1262
