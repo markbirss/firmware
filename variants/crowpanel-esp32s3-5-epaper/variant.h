@@ -31,7 +31,7 @@
 #define BUTTON_NEED_PULLUP
 
 // Buzzer - noisy ?
-// #define PIN_BUZZER (0 + 18)
+#define PIN_BUZZER (0 + 18)
 
 // Wheel
 //  Up         6
