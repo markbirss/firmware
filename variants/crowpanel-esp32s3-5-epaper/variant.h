@@ -55,7 +55,7 @@
 #define LORA_DIO1 16
 #define LORA_DIO2 17
 
-// SX1262
+// per SX1262_Receive_Interrupt/utilities.h
 #ifdef USE_SX1262
 #define SX126X_CS LORA_CS
 #define SX126X_DIO1 LORA_DIO1
@@ -65,7 +65,7 @@
 #define SX126X_DIO3_TCXO_VOLTAGE 1.8
 #endif
 
-// SX1280
+// per SX128x_Receive_Interrupt/utilities.h
 #ifdef USE_SX1280
 #define SX128X_CS LORA_CS
 #define SX128X_DIO1 LORA_DIO1
