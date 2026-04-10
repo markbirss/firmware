@@ -27,10 +27,6 @@ BlueFruitClass Bluefruit;
 #include "InternalFileSystem.h"
 Adafruit_LittleFS_Namespace::InternalFileSystem InternalFS;
 
-// ── SAADC lock stub (Phase 2) ────────────────────────────────────────────────
-#include "Nrf52SaadcLock.h"
-namespace concurrency { Lock *nrf52SaadcLock = nullptr; }
-
 // ── SPI / Wire singletons ─────────────────────────────────────────────────────
 SPIClass SPI;
 SPIClass SPI1;
@@ -315,7 +311,16 @@ void detachInterrupt(uint32_t pin)
 // Mode 0 (CPOL=0, CPHA=0), MSB first, 8 MHz (set in DTS overlay).
 // ═════════════════════════════════════════════════════════════════════════════
 
-static const struct device *_spi20_dev = DEVICE_DT_GET(DT_NODELABEL(spi20));
+// Lazy-init: DEVICE_DT_GET in global scope fails when the extern symbol is
+// not visible in this translation unit (Zephyr device extern declarations are
+// emitted per-TU only when a DT node is referenced).  Use a function-local
+// static instead so the symbol is resolved at first call time.
+static const struct device *_spi20(void)
+{
+    static const struct device *dev = nullptr;
+    if (!dev) dev = DEVICE_DT_GET(DT_NODELABEL(spi20));
+    return dev;
+}
 
 // SPI config: Mode 0, MSB first, no hardware CS (RadioLib does it manually)
 static const struct spi_config _spi20_cfg = {
@@ -332,7 +337,7 @@ uint8_t SPIClass::transfer(uint8_t data)
     struct spi_buf rx_buf = { .buf = &rx,   .len = 1 };
     struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
     struct spi_buf_set rx_set = { .buffers = &rx_buf, .count = 1 };
-    spi_transceive(_spi20_dev, &_spi20_cfg, &tx_set, &rx_set);
+    spi_transceive(_spi20(), &_spi20_cfg, &tx_set, &rx_set);
     return rx;
 }
 
@@ -344,7 +349,7 @@ uint16_t SPIClass::transfer16(uint16_t data)
     struct spi_buf rx_buf = { .buf = rx, .len = 2 };
     struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
     struct spi_buf_set rx_set = { .buffers = &rx_buf, .count = 1 };
-    spi_transceive(_spi20_dev, &_spi20_cfg, &tx_set, &rx_set);
+    spi_transceive(_spi20(), &_spi20_cfg, &tx_set, &rx_set);
     return ((uint16_t)rx[0] << 8) | rx[1];
 }
 
@@ -357,7 +362,7 @@ void SPIClass::transferBytes(const uint8_t *tx, uint8_t *rx, uint32_t count)
     struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
     struct spi_buf_set rx_set = { .buffers = rx_buf.buf ? &rx_buf : nullptr,
                                   .count   = rx_buf.buf ? 1U : 0U };
-    spi_transceive(_spi20_dev, &_spi20_cfg, &tx_set, rx ? &rx_set : nullptr);
+    spi_transceive(_spi20(), &_spi20_cfg, &tx_set, rx ? &rx_set : nullptr);
 }
 
 void SPIClass::transfer(void *buf, size_t count)

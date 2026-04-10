@@ -24,6 +24,18 @@
     status = "disabled";
 };
 
+/* Enable uart30 — IMCU VCOM debug console (P0.00 TX, P0.01 RX) */
+&uart30 {
+    status = "okay";
+};
+
+/ {
+    chosen {
+        zephyr,console = &uart30;
+        zephyr,shell-uart = &uart30;
+    };
+};
+
 &pinctrl {
     spi20_default: spi20_default {
         group1 {

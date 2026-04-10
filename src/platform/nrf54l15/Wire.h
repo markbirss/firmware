@@ -23,8 +23,8 @@ class TwoWire {
 
     void beginTransmission(uint8_t addr)        { }
     void beginTransmission(int addr)            { beginTransmission((uint8_t)addr); }
-    uint8_t endTransmission(bool stop = true)   { return 0; }
-    uint8_t endTransmission(uint8_t stop)       { return 0; }
+    uint8_t endTransmission(bool stop = true)   { return 2; }  // 2=NACK, no device at this address
+    uint8_t endTransmission(uint8_t stop)       { return 2; }
 
     uint8_t requestFrom(uint8_t addr, uint8_t quantity, bool stop = true) { return 0; }
     uint8_t requestFrom(uint8_t addr, uint8_t quantity, uint8_t stop)     { return 0; }

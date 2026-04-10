@@ -15,28 +15,25 @@
 #define HAS_SCREEN 0
 #endif
 #ifndef HAS_WIRE
-#define HAS_WIRE 1
+#define HAS_WIRE 0
 #endif
 #ifndef HAS_GPS
 #define HAS_GPS 0
 #endif
 #ifndef HAS_BUTTON
-#define HAS_BUTTON 1
+#define HAS_BUTTON 0
 #endif
 #ifndef HAS_TELEMETRY
-#define HAS_TELEMETRY 1
+#define HAS_TELEMETRY 0
 #endif
 #ifndef HAS_SENSOR
-#define HAS_SENSOR 1
+#define HAS_SENSOR 0
 #endif
 #ifndef HAS_RADIO
 #define HAS_RADIO 1
 #endif
 #ifndef HAS_CPU_SHUTDOWN
 #define HAS_CPU_SHUTDOWN 0
-#endif
-#ifndef HAS_CUSTOM_CRYPTO_ENGINE
-#define HAS_CUSTOM_CRYPTO_ENGINE 0
 #endif
 
 // ADC reference — nRF54L15 SAADC uses VDD/4 internal ref by default

@@ -61,6 +61,8 @@ bool loopCanSleep()
     return !Serial;
 }
 
+void updateBatteryLevel(uint8_t level) { (void)level; }
+
 void __attribute__((noreturn)) __assert_func(const char *file, int line, const char *func, const char *failedexpr)
 {
     LOG_ERROR("assert failed %s: %d, %s, test=%s", file, line, func, failedexpr);
