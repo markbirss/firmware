@@ -1,12 +1,11 @@
 /**
  * SPI.h — Arduino SPI shim for Zephyr/nRF54L15
  *
- * Provides the Arduino SPIClass interface.  The actual SPI bus is
- * configured via Zephyr DTS (SPIM20 in nrf54l15dk.overlay).
- * RadioLib uses its own SPI HAL so these stubs are only needed for
- * code that includes SPI.h directly without going through RadioLib.
+ * Provides the Arduino SPIClass interface backed by Zephyr SPI API (SPIM20).
+ * The SPI bus is configured in the Zephyr DTS overlay (nrf54l15dk.overlay).
+ * RadioLib uses ArduinoHal which calls transfer() byte-by-byte.
  *
- * Phase 2: compile-only stubs.  Phase 3: wire to Zephyr SPI API.
+ * CS pin is handled by RadioLib via digitalWrite() — hardware CS is not used.
  */
 
 #pragma once
@@ -40,11 +39,15 @@ class SPIClass {
     void setClockDivider(uint8_t div)               {}
     void setFrequency(uint32_t freq)                {}
 
-    uint8_t  transfer(uint8_t data)                 { return 0; }
-    uint16_t transfer16(uint16_t data)              { return 0; }
-    void     transfer(void *buf, size_t count)      {}
-    void     transferBytes(const uint8_t *tx, uint8_t *rx, uint32_t count) {}
-    uint8_t  transfer(uint8_t tx, uint8_t *rx, uint32_t count) { return 0; }
+    // Real Zephyr SPI implementation — defined in nrf54l15_arduino.cpp
+    uint8_t  transfer(uint8_t data);
+    uint16_t transfer16(uint16_t data);
+    void     transfer(void *buf, size_t count);
+    void     transferBytes(const uint8_t *tx, uint8_t *rx, uint32_t count);
+    uint8_t  transfer(uint8_t tx, uint8_t *rx, uint32_t count) {
+        transferBytes(&tx, rx, count);
+        return rx ? rx[0] : 0;
+    }
 };
 
 extern SPIClass SPI;

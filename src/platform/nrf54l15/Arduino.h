@@ -171,11 +171,15 @@ static inline long random(void)                   { return (long)rand(); }
 static inline long random(long bound)             { return bound > 0 ? (rand() % bound) : 0; }
 static inline long random(long lo, long hi)       { return hi > lo ? lo + rand() % (hi - lo) : lo; }
 
-// ── GPIO stubs (Phase 2: compile-only; real impl in Phase 3) ─────────────────
-static inline void     pinMode(uint32_t, uint32_t)     {}
-static inline void     digitalWrite(uint32_t, uint32_t){}
-static inline int      digitalRead(uint32_t)           { return 0; }
-static inline void     digitalToggle(uint32_t)         {}
+// ── GPIO — real Zephyr implementation (Phase 3) ──────────────────────────────
+// Implemented in nrf54l15_arduino.cpp using Zephyr GPIO/SPI APIs.
+// Pin numbering: P0.n = n, P1.n = 16+n, P2.n = 32+n
+void     pinMode(uint32_t pin, uint32_t mode);
+void     digitalWrite(uint32_t pin, uint32_t value);
+int      digitalRead(uint32_t pin);
+static inline void     digitalToggle(uint32_t pin) {
+    digitalWrite(pin, !digitalRead(pin));
+}
 static inline uint32_t analogRead(uint32_t)            { return 0; }
 static inline void     analogWrite(uint32_t, uint32_t) {}
 static inline void     analogReadResolution(int)       {}
@@ -186,10 +190,10 @@ static inline void     analogWriteResolution(int)      {}
 // ── __FlashStringHelper — Arduino PROGMEM string class (no-op on Cortex-M) ──
 class __FlashStringHelper;
 
-// ── attachInterrupt / detachInterrupt stubs ───────────────────────────────────
+// ── attachInterrupt / detachInterrupt — real Zephyr GPIO interrupt impl ──────
 typedef void (*voidFuncPtr)(void);
-static inline void attachInterrupt(uint32_t, voidFuncPtr, int) {}
-static inline void detachInterrupt(uint32_t)                   {}
+void attachInterrupt(uint32_t pin, voidFuncPtr cb, int mode);
+void detachInterrupt(uint32_t pin);
 
 // ── Forward declaration of String (needed by Print / Stream) ─────────────────
 class String;
