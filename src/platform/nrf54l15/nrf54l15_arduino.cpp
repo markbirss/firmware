@@ -18,14 +18,9 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
-
 // ── Bluefruit singleton stub (satisfies NodeDB.cpp ARCH_NRF52 path) ──────────
 #include "bluefruit.h"
 BlueFruitClass Bluefruit;
-
-// ── Filesystem singleton (stub for Phase 2) ──────────────────────────────────
-#include "InternalFileSystem.h"
-Adafruit_LittleFS_Namespace::InternalFileSystem InternalFS;
 
 // ── SPI / Wire singletons ─────────────────────────────────────────────────────
 SPIClass SPI;
@@ -219,12 +214,43 @@ void pinMode(uint32_t pin, uint32_t mode)
     gpio_pin_configure(dev, zpin, flags);
 }
 
+// Log first N CS (pin 37=P2.05) and RST (pin 32=P2.00) toggles to verify GPIO works.
+// Silenced after GPIO_LOG_MAX calls to keep the log readable.
+#define GPIO_LOG_MAX 20
+static uint32_t _gpio_log_count = 0;
+
 void digitalWrite(uint32_t pin, uint32_t value)
 {
+    // Before the very first NRESET pulse, snapshot BUSY state.
+    // If BUSY is already HIGH here, the chip never completed power-on calibration.
+    if (pin == 32 && value == 0) {
+        static bool _first_nreset = true;
+        if (_first_nreset) {
+            _first_nreset = false;
+            const struct device *bdev = DEVICE_DT_GET(DT_NODELABEL(gpio2));
+            if (device_is_ready(bdev)) {
+                gpio_pin_configure(bdev, 3, GPIO_INPUT); // P2.03 = BUSY
+                int busy_before = gpio_pin_get(bdev, 3);
+                printk("[nrf54l15] BUSY before first NRESET = %d%s\n",
+                       busy_before,
+                       busy_before ? " ← STUCK HIGH (chip damaged?)" : " ← LOW (chip OK)");
+            }
+        }
+    }
+
     gpio_pin_t zpin;
     const struct device *dev = _gpio_dev_for_pin(pin, &zpin);
-    if (!device_is_ready(dev)) return;
+    if (!device_is_ready(dev)) {
+        printk("[GPIO] pin%u dev NOT READY\n", (unsigned)pin);
+        return;
+    }
     gpio_pin_set(dev, zpin, (int)value);
+    if ((pin == 37 || pin == 32) && _gpio_log_count < GPIO_LOG_MAX) {
+        // Read back the pin state to confirm it actually changed
+        int actual = gpio_pin_get(dev, zpin);
+        printk("[GPIO] pin%u → %u (read-back=%d)\n", (unsigned)pin, (unsigned)value, actual);
+        _gpio_log_count++;
+    }
 }
 
 int digitalRead(uint32_t pin)
@@ -232,7 +258,29 @@ int digitalRead(uint32_t pin)
     gpio_pin_t zpin;
     const struct device *dev = _gpio_dev_for_pin(pin, &zpin);
     if (!device_is_ready(dev)) return 0;
-    return gpio_pin_get(dev, zpin);
+    int v = gpio_pin_get(dev, zpin);
+    // Log BUSY pin (35=P2.03) state changes + periodic updates for 10 seconds
+    if (pin == 35) {
+        static uint32_t busy_log_count = 0;
+        static int last_busy = -1;
+        static uint32_t first_read_ms = 0;
+        if (first_read_ms == 0) first_read_ms = k_uptime_get_32();
+        uint32_t elapsed_ms = k_uptime_get_32() - first_read_ms;
+
+        // Always log state changes
+        if (v != last_busy) {
+            printk("[BUSY] %ums: state changed %d → %d\n",
+                   (unsigned)elapsed_ms, last_busy, v);
+            last_busy = v;
+        }
+        // Also log every 500ms for first 10 seconds so we can see timeline
+        if (elapsed_ms < 10000 && busy_log_count < 20 &&
+            (elapsed_ms / 500) > (busy_log_count)) {
+            printk("[BUSY] %ums: pin=%d (periodic)\n", (unsigned)elapsed_ms, v);
+            busy_log_count = (elapsed_ms / 500) + 1;
+        }
+    }
+    return v;
 }
 
 // ─── attachInterrupt — supports up to NRF54L15_MAX_IRQS pins ────────────────
@@ -306,39 +354,82 @@ void detachInterrupt(uint32_t pin)
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// SPI — Real Zephyr implementation using SPIM20 (Phase 3)
+// SPI — Real Zephyr implementation using SPIM00 (HP domain, 3.0V)
 // CS is handled by RadioLib via digitalWrite() — hardware CS not used.
-// Mode 0 (CPOL=0, CPHA=0), MSB first, 8 MHz (set in DTS overlay).
+// Mode 0 (CPOL=0, CPHA=0), MSB first.
 // ═════════════════════════════════════════════════════════════════════════════
 
+// Use SPIM00 (HP domain, 3.0V) — SPIM20 is 1.8V LP domain, incompatible with SX1262.
 // Lazy-init: DEVICE_DT_GET in global scope fails when the extern symbol is
-// not visible in this translation unit (Zephyr device extern declarations are
-// emitted per-TU only when a DT node is referenced).  Use a function-local
-// static instead so the symbol is resolved at first call time.
-static const struct device *_spi20(void)
+// not visible in this translation unit.  Use a function-local static instead.
+static const struct device *_spi00(void)
 {
     static const struct device *dev = nullptr;
-    if (!dev) dev = DEVICE_DT_GET(DT_NODELABEL(spi20));
+    if (!dev) {
+        dev = DEVICE_DT_GET(DT_NODELABEL(spi00));
+        if (!device_is_ready(dev)) {
+            printk("[nrf54l15] spi00 NOT READY\n");
+            dev = nullptr;
+        } else {
+            printk("[nrf54l15] spi00 ready\n");
+        }
+    }
     return dev;
 }
 
 // SPI config: Mode 0, MSB first, no hardware CS (RadioLib does it manually)
-static const struct spi_config _spi20_cfg = {
-    .frequency = 8000000U,
+//
+// SPIM00 base clock = 128 MHz (nRF54L15 default when NRF_CONFIG_CPU_FREQ_MHZ
+// is not set; SystemInit() applies 128 MHz).  Hardware prescaler must be EVEN
+// and in [4, 126] (SPIM00_PRESCALER_DIVISOR_RANGE_MIN/MAX from MDK).
+// 1 MHz → prescaler = 128 > 126 → NRFX_ERROR_INVALID_PARAM → -EIO on every
+// transfer.  Minimum valid frequency is 2 MHz (prescaler = 64).
+static const struct spi_config _spi00_cfg = {
+    .frequency = 2000000U,   // 2 MHz — minimum valid for SPIM00 at 128 MHz base
     .operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
     .slave     = 0,
     .cs        = {}, // CS = NULL → RadioLib handles CS via GPIO
 };
 
+// Static DMA buffers — stack-allocated bufs on nRF54L15 may not be reachable
+// by SPIM20 EasyDMA.  Static placement in .bss/.data is always in Global SRAM.
+// rx_byte is pre-filled with 0xAA before every transfer so we can distinguish:
+//   0xAA → DMA never wrote (EasyDMA can't reach the buffer)
+//   0x00 → MISO actively driven LOW (chip in reset / bus fight)
+//   0xFF → MISO floating HIGH
+//   other → real chip response
+static uint8_t _spi_tx_byte __attribute__((aligned(4)));
+static uint8_t _spi_rx_byte __attribute__((aligned(4)));
+
+// Dump the first SPI_DUMP_N byte exchanges so we can see what MISO returns.
+#define SPI_DUMP_N 30
+static uint32_t _spi_dump_count = 0;
+
 uint8_t SPIClass::transfer(uint8_t data)
 {
-    uint8_t rx = 0;
-    struct spi_buf tx_buf = { .buf = &data, .len = 1 };
-    struct spi_buf rx_buf = { .buf = &rx,   .len = 1 };
+    const struct device *dev = _spi00();
+    if (!dev) return 0xFF;
+
+    _spi_tx_byte = data;
+    _spi_rx_byte = 0xAA;   // sentinel: if DMA doesn't write, we return 0xAA
+
+    struct spi_buf tx_buf = { .buf = &_spi_tx_byte, .len = 1 };
+    struct spi_buf rx_buf = { .buf = &_spi_rx_byte, .len = 1 };
     struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
     struct spi_buf_set rx_set = { .buffers = &rx_buf, .count = 1 };
-    spi_transceive(_spi20(), &_spi20_cfg, &tx_set, &rx_set);
-    return rx;
+
+    static uint32_t spi_err_count = 0;
+    int ret = spi_transceive(dev, &_spi00_cfg, &tx_set, &rx_set);
+    if (ret != 0 && spi_err_count++ < 3)
+        printk("[SPI] err=%d tx=0x%02x\n", ret, data);
+
+    if (_spi_dump_count < SPI_DUMP_N) {
+        printk("[SPI] #%u tx=0x%02x rx=0x%02x\n",
+               (unsigned)_spi_dump_count, data, _spi_rx_byte);
+        _spi_dump_count++;
+    }
+
+    return _spi_rx_byte;
 }
 
 uint16_t SPIClass::transfer16(uint16_t data)
@@ -349,7 +440,7 @@ uint16_t SPIClass::transfer16(uint16_t data)
     struct spi_buf rx_buf = { .buf = rx, .len = 2 };
     struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
     struct spi_buf_set rx_set = { .buffers = &rx_buf, .count = 1 };
-    spi_transceive(_spi20(), &_spi20_cfg, &tx_set, &rx_set);
+    spi_transceive(_spi00(), &_spi00_cfg, &tx_set, &rx_set);
     return ((uint16_t)rx[0] << 8) | rx[1];
 }
 
@@ -362,7 +453,7 @@ void SPIClass::transferBytes(const uint8_t *tx, uint8_t *rx, uint32_t count)
     struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
     struct spi_buf_set rx_set = { .buffers = rx_buf.buf ? &rx_buf : nullptr,
                                   .count   = rx_buf.buf ? 1U : 0U };
-    spi_transceive(_spi20(), &_spi20_cfg, &tx_set, rx ? &rx_set : nullptr);
+    spi_transceive(_spi00(), &_spi00_cfg, &tx_set, rx ? &rx_set : nullptr);
 }
 
 void SPIClass::transfer(void *buf, size_t count)

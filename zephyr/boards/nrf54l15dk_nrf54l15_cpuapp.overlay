@@ -1,30 +1,37 @@
 /*
  * Zephyr device tree overlay — Nordic nRF54L15-DK + EBYTE E22-900M30S (SX1262)
  *
- * Uses SPIM20 (peripheral domain SPI, flexible pin mapping).
- * SPIM00 is NOT used because its MISO pin (P2.09) conflicts with DK LED0.
+ * P1 GPIO bank runs at 1.8V VDDIO (LP domain) — NOT compatible with SX1262
+ * which needs VIH ≥ 2.31V (0.7 × 3.3V).  All E22 signals therefore use P2,
+ * which is in the HP domain (3.0V VDDIO), via SPIM00.
  *
- * NOTE: uart20 and spi20 share hardware at 0xc6000 on nRF54L15.
- * The DK default DTS enables uart20; we disable it and enable spi20 instead.
- * UART30 (P0.00/P0.01) remains enabled for the debug console (IMCU VCOM).
+ * SPIM00 (HP domain, 3.0V) replaces SPIM20 (LP domain, 1.8V).
+ * Default pinctrl from cpuapp_common.dtsi already maps SPIM00 to P2 pins:
+ *   MISO = P2.04, MOSI = P2.02, SCK = P2.01
  *
- * Physical wiring:
- *   E22 SCK  → P1.12
- *   E22 MOSI → P1.11
- *   E22 MISO → P0.11
- *   E22 NSS  → P0.09  (RadioLib GPIO, not hardware CS)
- *   E22 DIO1 → P0.08
- *   E22 BUSY → P0.07
- *   E22 RST  → P0.06
- *   E22 RXEN → P0.05  (held HIGH by SX126X_ANT_SW)
+ * The on-board MX25R64 NOR flash was attached to SPIM00; it is not used by
+ * Meshtastic (LittleFS lives in internal RRAM), so we delete its DTS node to
+ * free the bus and P2.05 (its CS pin) for our use.
+ *
+ * Physical wiring (all P2, HP domain):
+ *   E22 MISO  → P2.04  (SPIM00 MISO)
+ *   E22 NSS   → P2.05  (freed from MX25R64 CS, RadioLib GPIO)
+ *   E22 DIO1  → P2.06  (IRQ — interrupt capable via gpiote30)
+ *   E22 BUSY  → P2.03  (GPIO input)
+ *   E22 RST   → P2.00  (GPIO output)
+ *   E22 RXEN  → P2.07  (held HIGH via ANT_SW; replaces LED2 on DK)
+ *   E22 MOSI  → P2.02  (SPIM00 MOSI)
+ *   E22 SCK   → P2.01  (SPIM00 SCK)
+ *
+ * Pin numbering convention: P0.n = n, P1.n = 16+n, P2.n = 32+n.
  */
 
-/* Disable uart20 so that spi20 can use the shared peripheral at 0xc6000 */
+/* Disable uart20 — no longer needed for LoRa (P1 domain abandoned). */
 &uart20 {
     status = "disabled";
 };
 
-/* Enable uart30 — IMCU VCOM debug console (P0.00 TX, P0.01 RX) */
+/* Enable uart30 — IMCU VCOM debug console (P0.00 TX, P0.01 RX, 3.0V) */
 &uart30 {
     status = "okay";
 };
@@ -34,33 +41,27 @@
         zephyr,console = &uart30;
         zephyr,shell-uart = &uart30;
     };
-};
 
-&pinctrl {
-    spi20_default: spi20_default {
-        group1 {
-            psels = <NRF_PSEL(SPIM_SCK,  1, 12)>,  /* P1.12 */
-                    <NRF_PSEL(SPIM_MOSI, 1, 11)>,  /* P1.11 */
-                    <NRF_PSEL(SPIM_MISO, 0, 11)>;  /* P0.11 */
-        };
+    buttons {
+        /* button1 (P1.09) and button2 (P1.08) no longer repurposed —
+         * E22 now uses P2. Restore them if needed, or leave deleted
+         * to keep the overlay minimal. */
+        /delete-node/ button_1;
+        /delete-node/ button_2;
     };
 
-    spi20_sleep: spi20_sleep {
-        group1 {
-            psels = <NRF_PSEL(SPIM_SCK,  1, 12)>,
-                    <NRF_PSEL(SPIM_MOSI, 1, 11)>,
-                    <NRF_PSEL(SPIM_MISO, 0, 11)>;
-            low-power-enable;
-        };
+    aliases {
+        /delete-property/ sw1;
+        /delete-property/ sw2;
     };
 };
 
-&spi20 {
-    status = "okay";
-    pinctrl-0 = <&spi20_default>;
-    pinctrl-1 = <&spi20_sleep>;
-    pinctrl-names = "default", "sleep";
-    clock-frequency = <DT_FREQ_M(8)>;  /* 8 MHz — safe for E22 over wires */
-
-    /* CS and IRQ lines are bit-banged by RadioLib; no DT child node needed. */
+/*
+ * Override SPIM00 to remove the MX25R64 NOR flash child.
+ * The SPIM00 peripheral itself stays enabled (status = "okay" from
+ * cpuapp_common.dtsi) with its existing pinctrl (P2.01/P2.02/P2.04).
+ * RadioLib drives CS (P2.05) as a plain GPIO — no hardware CS needed.
+ */
+&spi00 {
+    /delete-node/ mx25r6435f@0;
 };

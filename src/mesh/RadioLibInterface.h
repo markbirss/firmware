@@ -104,6 +104,9 @@ class RadioLibInterface : public RadioInterface, protected concurrency::Notified
      */
     static RadioLibInterface *instance;
 
+    /** Clear instance on destruction so stale pointer checks in loop() are safe */
+    virtual ~RadioLibInterface() { if (instance == this) instance = nullptr; }
+
     /**
      * Glue functions called from ISR land
      */

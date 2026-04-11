@@ -9,18 +9,21 @@ Radio: **EBYTE E22-900M30S** (SX1262, 30 dBm, 868/915 MHz)
 
 Usa el conector **J1** del DK. Los pines están marcados en el PCB con el nombre del GPIO (P0.xx / P1.xx).
 
-| E22-900M30S | DK J1 pin | GPIO   | Función                          |
-|-------------|-----------|--------|----------------------------------|
-| NSS / CS    | P0.09     | 9      | SPI chip-select (RadioLib)       |
-| SCK         | P1.12     | 28     | SPIM20 clock                     |
-| MOSI        | P1.11     | 27     | SPIM20 data out                  |
-| MISO        | P0.11     | 11     | SPIM20 data in                   |
-| DIO1        | P0.08     | 8      | IRQ — interrupción del modem     |
-| BUSY        | P0.07     | 7      | Señal BUSY (GPIO input)          |
-| NRESET      | P0.06     | 6      | Reset del módulo (GPIO output)   |
-| RXEN        | P0.05     | 5      | LNA enable — held HIGH (ANT_SW)  |
-| GND         | GND (J1)  | —      | Masa común                       |
-| VCC         | VDD (J1)  | —      | 3.3 V                            |
+> **Nota**: P0.05–P0.09 existen en el SoC pero **no están ruteados** a ningún conector
+> físico en la PCA10156 (confirmado en esquemático). Todos los pines del E22 van en P1.
+
+| E22-900M30S | DK J1 pin | GPIO | Función                                       |
+|-------------|-----------|------|-----------------------------------------------|
+| MISO        | P1.04     | 20   | SPIM20 data in (era uart20 TXD, deshabilitado)|
+| NSS / CS    | P1.05     | 21   | SPI chip-select (RadioLib GPIO)               |
+| DIO1        | P1.06     | 22   | IRQ — interrupción del modem                  |
+| BUSY        | P1.07     | 23   | Señal BUSY (GPIO input)                       |
+| NRESET      | P1.08     | 24   | Reset del módulo (GPIO output) (era BTN2)     |
+| RXEN        | P1.09     | 25   | LNA enable — held HIGH via ANT_SW (era BTN1)  |
+| MOSI        | P1.11     | 27   | SPIM20 data out                               |
+| SCK         | P1.12     | 28   | SPIM20 clock                                  |
+| GND         | GND (J1)  | —    | Masa común                                    |
+| VCC         | VDD (J1)  | —    | 3.3 V                                         |
 
 > **Convención de numeración**: P0.n = n, P1.n = 16+n, P2.n = 32+n  
 > Ejemplo: P1.12 → 16+12 = 28
@@ -48,20 +51,26 @@ Sin este puente el módulo **no transmitirá** (PA nunca habilitado).
 
 ## Pines reservados del DK — no conectar
 
-| Pines        | Función reservada        |
-|--------------|--------------------------|
-| P0.00–P0.03  | UART debug IMCU (J-Link) |
-| P0.04        | BTN3                     |
-| P1.00–P1.01  | Cristal 32 kHz           |
-| P1.02–P1.03  | Antena NFC               |
-| P1.04–P1.07  | UART1                    |
-| P1.08–P1.09  | BTN2, BTN1               |
-| P1.10        | LED1                     |
-| P1.13        | BTN0                     |
-| P1.14        | LED3                     |
-| P2.00–P2.05  | Flash QSPI interno       |
-| P2.07        | LED2                     |
-| P2.09        | LED0                     |
+| Pines        | Función reservada                                 |
+|--------------|---------------------------------------------------|
+| P0.00–P0.03  | UART debug IMCU (uart30, J-Link)                  |
+| P0.04        | BTN3                                              |
+| P0.05–P0.09  | No ruteados al conector (sin usar)                |
+| P1.00–P1.01  | Cristal 32 kHz                                    |
+| P1.02–P1.03  | Antena NFC                                        |
+| P1.10        | LED1 + pwm20 activo — no reutilizar               |
+| P1.13        | BTN0 — único botón de usuario restante            |
+| P1.14        | LED3                                              |
+| P2.00–P2.05  | Flash QSPI interno                                |
+| P2.06–P2.10  | Trace ETM / LED0 / LED2                           |
+
+**Pines reutilizados para E22** (liberados del DK):
+
+| Pines       | Función original | Nuevo uso         |
+|-------------|------------------|-------------------|
+| P1.04–P1.07 | uart20 (UART1)   | MISO / CS / DIO1 / BUSY |
+| P1.08       | BTN2             | NRESET            |
+| P1.09       | BTN1             | RXEN (ANT_SW)     |
 
 ---
 
