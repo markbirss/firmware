@@ -27,6 +27,7 @@
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/kernel.h>
+#include <zephyr/settings/settings.h>
 
 // ── UUID definitions (little-endian per Bluetooth spec) ───────────────────────
 // Syntax: replace hyphens with commas, prefix 0x — matches BT_UUID_128_ENCODE doc.
@@ -99,6 +100,7 @@ static void logradio_ccc_changed(const struct bt_gatt_attr *attr, uint16_t value
 static ssize_t read_fromnum(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                              void *buf, uint16_t len, uint16_t offset)
 {
+    LOG_INFO("GATT read_fromnum: fromNum=%u offset=%u", fromNumValue, offset);
     return bt_gatt_attr_read(conn, attr, buf, len, offset, &fromNumValue, sizeof(fromNumValue));
 }
 
@@ -108,15 +110,25 @@ static ssize_t read_fromradio(struct bt_conn *conn, const struct bt_gatt_attr *a
     if (offset == 0) {
         // First chunk: pull the next packet from the queue
         fromRadioLen = phoneAPI ? phoneAPI->getFromRadio(fromRadioBytes) : 0;
+        LOG_INFO("GATT read_fromradio: len=%u", (unsigned)fromRadioLen);
     }
     // bt_gatt_attr_read handles slicing for long reads (ATT_READ_BLOB)
     return bt_gatt_attr_read(conn, attr, buf, len, offset, fromRadioBytes, fromRadioLen);
+}
+
+static ssize_t read_logradio(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+                              void *buf, uint16_t len, uint16_t offset)
+{
+    // logRadio is write-only from the device side (notify/indicate).
+    // Return an empty read so GATT discovery doesn't fail with NOT_PERMITTED.
+    return bt_gatt_attr_read(conn, attr, buf, len, offset, NULL, 0);
 }
 
 static ssize_t write_toradio(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                               const void *buf, uint16_t len, uint16_t offset,
                               uint8_t flags)
 {
+    LOG_INFO("GATT write_toradio: len=%u offset=%u flags=0x%x", len, offset, flags);
     if (offset != 0) {
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
     }
@@ -181,7 +193,7 @@ BT_GATT_SERVICE_DEFINE(mesh_svc,
     BT_GATT_CHARACTERISTIC(&logradio_uuid.uuid,
                            BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY | BT_GATT_CHRC_INDICATE,
                            BT_GATT_PERM_READ,
-                           NULL, NULL, NULL),
+                           read_logradio, NULL, NULL),
     BT_GATT_CCC(logradio_ccc_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 );
 
@@ -201,38 +213,57 @@ static struct bt_le_ext_adv *ext_adv_set = nullptr;
 
 static void start_advertising()
 {
-    // FLAGS (3B) + UUID128 (18B) = 21B total.
+    // FLAGS (3B) + UUID128 (18B) + NAME (2+len) — all fit within the 191B
+    // CONFIG_BT_CTLR_ADV_DATA_LEN_MAX extended advertising limit.
     //
     // IMPORTANT: BT_DATA_BYTES() uses C99 compound literals that GCC C++ treats
     // as temporaries; with -Os the compiler elides the bt_data struct writes,
-    // leaving the stack uninitialized.  Use static const arrays instead so the
-    // values are placed in .rodata and the pointers are compile-time constants.
-    static const uint8_t adv_flags_val[]  = { BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR };
+    // leaving the stack uninitialized.  Use static const arrays for stable data
+    // (flags, UUID) and a runtime pointer for the dynamic device name.
+    static const uint8_t adv_flags_val[]   = { BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR };
     static const uint8_t adv_uuid128_val[] = { MESH_SVC_UUID_VAL };
-    static const struct bt_data ad[2] = {
-        { BT_DATA_FLAGS,      sizeof(adv_flags_val),  adv_flags_val  },
-        { BT_DATA_UUID128_ALL, sizeof(adv_uuid128_val), adv_uuid128_val },
+
+    // Device name is set by bt_set_name() in setup() before start_advertising().
+    // bt_get_name() returns a pointer to Zephyr's internal static bt_name buffer.
+    const char *name     = bt_get_name();
+    uint8_t     name_len = (uint8_t)strlen(name);
+
+    // Non-static local because name_len is dynamic.  bt_le_ext_adv_set_data()
+    // copies the payload synchronously, so the stack frame is safe.
+    struct bt_data ad[3] = {
+        { BT_DATA_FLAGS,         sizeof(adv_flags_val),   adv_flags_val             },
+        { BT_DATA_UUID128_ALL,   sizeof(adv_uuid128_val), adv_uuid128_val           },
+        { BT_DATA_NAME_COMPLETE, name_len,                (const uint8_t *)name     },
     };
     int err;
 
-    if (!ext_adv_set) {
-        // BT_LE_ADV_OPT_EXT_ADV = true extended advertising (ADV_EXT_IND + AUX_ADV_IND)
-        // BT_LE_ADV_OPT_CONN    = connectable (includes _ONE_TIME: stops after connection)
-        // BT_LE_ADV_OPT_USE_IDENTITY = use static random identity address
-        err = bt_le_ext_adv_create(
-            BT_LE_ADV_PARAM(BT_LE_ADV_OPT_EXT_ADV | BT_LE_ADV_OPT_CONN |
-                            BT_LE_ADV_OPT_USE_IDENTITY,
-                            BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL),
-            NULL, &ext_adv_set);
-        if (err) {
-            LOG_WARN("BLE ext_adv_create failed: %d", err);
-            return;
-        }
+    // Always delete and recreate the advertising set.  After a connection the
+    // BLE stack stops advertising automatically, but the set may be in an
+    // internal "used" state where bt_le_ext_adv_start() silently fails.
+    // Deleting first guarantees a clean slate on every (re-)advertise.
+    if (ext_adv_set) {
+        bt_le_ext_adv_delete(ext_adv_set);
+        ext_adv_set = nullptr;
+    }
+
+    // BT_LE_ADV_OPT_EXT_ADV = true extended advertising (ADV_EXT_IND + AUX_ADV_IND)
+    // BT_LE_ADV_OPT_CONN    = connectable (includes _ONE_TIME: stops after connection)
+    // BT_LE_ADV_OPT_USE_IDENTITY = use static random identity address
+    err = bt_le_ext_adv_create(
+        BT_LE_ADV_PARAM(BT_LE_ADV_OPT_EXT_ADV | BT_LE_ADV_OPT_CONN |
+                        BT_LE_ADV_OPT_USE_IDENTITY,
+                        BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL),
+        NULL, &ext_adv_set);
+    if (err) {
+        LOG_WARN("BLE ext_adv_create failed: %d", err);
+        return;
     }
 
     err = bt_le_ext_adv_set_data(ext_adv_set, ad, ARRAY_SIZE(ad), NULL, 0);
     if (err) {
         LOG_WARN("BLE ext_adv_set_data failed: %d", err);
+        bt_le_ext_adv_delete(ext_adv_set);
+        ext_adv_set = nullptr;
         return;
     }
 
@@ -243,6 +274,8 @@ static void start_advertising()
     }
     if (err) {
         LOG_WARN("BLE adv start failed: %d", err);
+        bt_le_ext_adv_delete(ext_adv_set);
+        ext_adv_set = nullptr;
     } else {
         LOG_INFO("BLE advertising as '%s'", bt_get_name());
     }
@@ -252,6 +285,8 @@ static void stop_advertising()
 {
     if (ext_adv_set) {
         bt_le_ext_adv_stop(ext_adv_set);
+        bt_le_ext_adv_delete(ext_adv_set);
+        ext_adv_set = nullptr;
     }
 }
 
@@ -277,12 +312,11 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
     meshtastic::BluetoothStatus newStatus(meshtastic::BluetoothStatus::ConnectionState::CONNECTED);
     bluetoothStatus->updateStatus(&newStatus);
 
-    // For PIN modes, request pairing/encryption on the new connection
-    if (config.bluetooth.mode != meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN) {
-        if (bt_conn_set_security(conn, BT_SECURITY_L2) != 0) {
-            LOG_WARN("BLE: bt_conn_set_security failed");
-        }
-    }
+    // nRF54L15-DK has no screen — cannot display a PIN to the user.
+    // Requesting BT_SECURITY_L2 causes the OS to show a pairing dialog that
+    // the user dismisses, triggering disconnect + advertising restart failure.
+    // Skip security negotiation; the Meshtastic app works over plain GATT.
+    // (Security can be re-enabled once a display or NFC OOB path is available.)
 }
 
 static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
@@ -401,6 +435,18 @@ void nrf54l15_bt_preinit()
         }
         bt_initialized = true;
         LOG_INFO("BLE stack pre-initialized on main thread");
+
+        // Phase 7: load bonding keys from LittleFS (/lfs/bt_settings).
+        // LittleFS is already mounted by fsInit() before nrf54l15Setup() runs.
+        // On first boot the file doesn't exist — settings_load() returns 0 (OK).
+        // On subsequent boots, previously bonded peers are restored so the
+        // phone can reconnect without re-pairing.
+        err = settings_load();
+        if (err) {
+            LOG_WARN("settings_load failed: %d (OK on first boot)", err);
+        } else {
+            LOG_INFO("BT settings loaded from /lfs/bt_settings");
+        }
     }
 }
 
