@@ -65,6 +65,7 @@ NRF52Bluetooth *nrf52Bluetooth = nullptr;
 #ifdef ARCH_NRF54L15
 void nrf54l15Setup();
 void nrf54l15Loop();
+NRF54L15Bluetooth *nrf54l15Bluetooth = nullptr;
 #endif
 
 #if HAS_WIFI || defined(USE_WS5500)

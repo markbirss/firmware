@@ -9,7 +9,7 @@
 //
 
 #ifndef HAS_BLUETOOTH
-#define HAS_BLUETOOTH 0
+#define HAS_BLUETOOTH 1
 #endif
 #ifndef HAS_SCREEN
 #define HAS_SCREEN 0

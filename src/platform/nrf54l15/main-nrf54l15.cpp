@@ -16,8 +16,10 @@
 
 #include "NodeDB.h"
 #include "PowerMon.h"
+#include "Router.h"
 #include "error.h"
 #include "main.h"
+#include "mesh/MeshService.h"
 #include "meshUtils.h"
 #include "power.h"
 #include <power/PowerHAL.h>
@@ -88,17 +90,34 @@ void getMacAddr(uint8_t *dmac)
 #endif
 }
 
-// ── Bluetooth (Phase 2) ───────────────────────────────────────────────────
+// ── Bluetooth ─────────────────────────────────────────────────────────────────
+
 void setBluetoothEnable(bool enable)
 {
-    // BLE disabled in Phase 1.
-    // TODO(nrf54l15): implement using Zephyr BT_ENABLE / bt_le_adv_start APIs
-    (void)enable;
+    if (enable) {
+        static bool initialized = false;
+        if (!initialized) {
+            nrf54l15Bluetooth = new NRF54L15Bluetooth();
+            nrf54l15Bluetooth->startDisabled();
+            initialized = true;
+        }
+        if (nrf54l15Bluetooth) {
+            nrf54l15Bluetooth->resumeAdvertising();
+        }
+    } else {
+        if (nrf54l15Bluetooth) {
+            nrf54l15Bluetooth->shutdown();
+        }
+    }
 }
 
 void clearBonds()
 {
-    // TODO(nrf54l15): implement bond clearing via Zephyr BT settings API
+    if (!nrf54l15Bluetooth) {
+        nrf54l15Bluetooth = new NRF54L15Bluetooth();
+        nrf54l15Bluetooth->setup();
+    }
+    nrf54l15Bluetooth->clearBonds();
 }
 
 void enterDfuMode()
@@ -147,6 +166,9 @@ void cpuDeepSleep(uint32_t msecToWake)
 }
 
 // ── Setup / Loop ──────────────────────────────────────────────────────────
+// Forward declaration — defined in NRF54L15Bluetooth.cpp
+void nrf54l15_bt_preinit();
+
 void nrf54l15Setup()
 {
     // nRF54L15 power peripheral layout differs from nRF52; RESETREAS not present here.
@@ -160,6 +182,11 @@ void nrf54l15Setup()
 #else
     randomSeed(analogRead(0));
 #endif
+
+    // Pre-initialize BT stack here on the main thread (CONFIG_MAIN_STACK_SIZE=8192).
+    // bt_enable() overflows the smaller PowerFSMThread stack when called later.
+    // NRF54L15Bluetooth::setup() checks bt_initialized and skips bt_enable() if true.
+    nrf54l15_bt_preinit();
 }
 
 void nrf54l15Loop()

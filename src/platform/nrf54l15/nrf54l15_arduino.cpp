@@ -22,6 +22,11 @@
 #include "bluefruit.h"
 BlueFruitClass Bluefruit;
 
+// ── _fini stub — ARM newlib's __libc_fini_array references _fini, but ────────
+// Zephyr startup doesn't provide it. Provide a weak no-op so the linker
+// is satisfied when C++ global dtors or atexit() pull in __libc_fini_array.
+extern "C" void __attribute__((weak)) _fini(void) {}
+
 // ── SPI / Wire singletons ─────────────────────────────────────────────────────
 SPIClass SPI;
 SPIClass SPI1;

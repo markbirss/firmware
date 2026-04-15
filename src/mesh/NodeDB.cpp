@@ -612,6 +612,23 @@ void NodeDB::installDefaultConfig(bool preserveKey = false)
 #else
     config.lora.modem_preset = meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST;
 #endif
+#ifdef USERPREFS_LORACONFIG_USE_PRESET
+    config.lora.use_preset = USERPREFS_LORACONFIG_USE_PRESET;
+#else
+    config.lora.use_preset = true;
+#endif
+#ifdef USERPREFS_LORACONFIG_BANDWIDTH
+    config.lora.bandwidth = USERPREFS_LORACONFIG_BANDWIDTH;
+#endif
+#ifdef USERPREFS_LORACONFIG_SPREAD_FACTOR
+    config.lora.spread_factor = USERPREFS_LORACONFIG_SPREAD_FACTOR;
+#endif
+#ifdef USERPREFS_LORACONFIG_CODING_RATE
+    config.lora.coding_rate = USERPREFS_LORACONFIG_CODING_RATE;
+#endif
+#ifdef USERPREFS_LORACONFIG_OVERRIDE_FREQUENCY
+    config.lora.override_frequency = USERPREFS_LORACONFIG_OVERRIDE_FREQUENCY;
+#endif
     config.lora.hop_limit = HOP_RELIABLE;
 #ifdef USERPREFS_CONFIG_LORA_IGNORE_MQTT
     config.lora.ignore_mqtt = USERPREFS_CONFIG_LORA_IGNORE_MQTT;
@@ -1311,6 +1328,28 @@ void NodeDB::loadFromDisk()
 
 #if defined(USERPREFS_LORA_TX_DISABLED) && USERPREFS_LORA_TX_DISABLED
     config.lora.tx_enabled = false;
+#endif
+
+    // Always-apply LoRa overrides: applied after loading saved config so they
+    // take effect even when NVS already has a valid config (e.g. region-locked
+    // dev boards with no BLE/serial to set the region at runtime).
+#ifdef USERPREFS_CONFIG_LORA_REGION
+    config.lora.region = USERPREFS_CONFIG_LORA_REGION;
+#endif
+#ifdef USERPREFS_LORACONFIG_USE_PRESET
+    config.lora.use_preset = USERPREFS_LORACONFIG_USE_PRESET;
+#endif
+#ifdef USERPREFS_LORACONFIG_BANDWIDTH
+    config.lora.bandwidth = USERPREFS_LORACONFIG_BANDWIDTH;
+#endif
+#ifdef USERPREFS_LORACONFIG_SPREAD_FACTOR
+    config.lora.spread_factor = USERPREFS_LORACONFIG_SPREAD_FACTOR;
+#endif
+#ifdef USERPREFS_LORACONFIG_CODING_RATE
+    config.lora.coding_rate = USERPREFS_LORACONFIG_CODING_RATE;
+#endif
+#ifdef USERPREFS_LORACONFIG_OVERRIDE_FREQUENCY
+    config.lora.override_frequency = USERPREFS_LORACONFIG_OVERRIDE_FREQUENCY;
 #endif
 
     if (backupSecurity.private_key.size > 0) {
