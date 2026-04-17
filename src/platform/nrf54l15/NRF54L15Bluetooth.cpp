@@ -8,9 +8,12 @@
 //   logRadio:  5a3d6e49-06e6-4423-9944-e9de8cdf9547  READ | NOTIFY | INDICATE
 //
 // Threading model:
-//   - BT RX thread calls connected_cb / disconnected_cb / GATT write_toradio
-//   - Meshtastic main thread calls onNowHasData → bt_gatt_notify (thread-safe in Zephyr)
-//   - active_conn and CCC flags protected by ble_mutex where needed
+//   - BT RX thread: connected_cb / disconnected_cb / GATT read_/write_ callbacks
+//   - Meshtastic OSThread scheduler (cooperative, main thread): BleDeferredThread
+//     polls pendingToRadio and runs the zombie-connection watchdog every 100 ms
+//   - PhoneAPI::onNowHasData: sends fromNum notify synchronously from whichever
+//     thread pushed the packet (bt_gatt_notify is thread-safe in Zephyr)
+//   - active_conn protected by ble_mutex where needed
 
 #include "NRF54L15Bluetooth.h"
 #include "BluetoothCommon.h"
@@ -106,8 +109,8 @@ static uint32_t fromNumValue = 0;
 // phoneAPI->handleToRadio() directly triggers handleStartConfig →
 // getFiles("/", 10) → nanopb encode, which overflows the stack on the exact
 // "Client wants config" write.  Instead we copy the payload into a pending
-// buffer here, set a flag, and let ToRadioDeferredThread (running on the
-// main thread, 24 KB stack) do the actual call.
+// buffer here, set a flag, and let BleDeferredThread (running on the
+// Meshtastic OSThread scheduler, 24 KB stack) do the actual call.
 static uint8_t pendingToRadioBuf[MAX_TO_FROM_RADIO_SIZE];
 static size_t  pendingToRadioLen = 0;
 static volatile bool pendingToRadio = false;
@@ -207,7 +210,7 @@ static ssize_t write_toradio(struct bt_conn *conn, const struct bt_gatt_attr *at
         if (len < MAX_TO_FROM_RADIO_SIZE) {
             memset(lastToRadio + len, 0, MAX_TO_FROM_RADIO_SIZE - len);
         }
-        // Defer handleToRadio() to main-thread OSThread (24 KB stack).
+        // Defer handleToRadio() to BleDeferredThread (24 KB stack).
         // Running it here on bt_workq (6 KB) overflows during handleStartConfig.
         // Always overwrite pending — we already dedup'd above via lastToRadio,
         // so any new write here is genuinely new data that must be delivered.
@@ -606,10 +609,10 @@ void nrf54l15_bt_preinit()
 
 // ── NRF54L15Bluetooth public methods ─────────────────────────────────────────
 
-void NRF54L15Bluetooth::setup()
+// Shared init: idempotent setup of work item, OSThread, auth callbacks, bt_enable,
+// and device name. Leaves advertising control to the caller.
+static bool nrf54l15_bt_init_common()
 {
-    LOG_INFO("NRF54L15Bluetooth::setup()");
-
     k_work_init(&adv_restart_work, adv_restart_work_fn);
 
     if (!bleDeferredThread) {
@@ -620,7 +623,6 @@ void NRF54L15Bluetooth::setup()
         phoneAPI = new BluetoothPhoneAPI();
     }
 
-    // Register auth callbacks before bt_enable so they're in place for first pairing
 #if defined(CONFIG_BT_SMP)
     if (config.bluetooth.mode != meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN) {
         bt_conn_auth_cb_register(&auth_cb);
@@ -632,15 +634,22 @@ void NRF54L15Bluetooth::setup()
         int err = bt_enable(NULL);
         if (err) {
             LOG_ERROR("BLE enable failed: %d", err);
-            return;
+            return false;
         }
         bt_initialized = true;
         LOG_INFO("BLE stack enabled");
     }
 
-    const char *name = getDeviceName();
-    bt_set_name(name);
+    bt_set_name(getDeviceName());
+    return true;
+}
 
+void NRF54L15Bluetooth::setup()
+{
+    LOG_INFO("NRF54L15Bluetooth::setup()");
+    if (!nrf54l15_bt_init_common()) {
+        return;
+    }
     ble_enabled = true;
     start_advertising();
 }
@@ -663,39 +672,10 @@ void NRF54L15Bluetooth::shutdown()
 
 void NRF54L15Bluetooth::startDisabled()
 {
-    // Initialize BT stack but do NOT advertise.
-    // Do NOT call setup() — that calls start_advertising() internally.
-    // Duplicate just the init portion of setup().
-    if (!phoneAPI) {
-        phoneAPI = new BluetoothPhoneAPI();
+    // Initialize BT stack but leave advertising off until resumeAdvertising().
+    if (!nrf54l15_bt_init_common()) {
+        return;
     }
-
-    k_work_init(&adv_restart_work, adv_restart_work_fn);
-
-    if (!bleDeferredThread) {
-        bleDeferredThread = new BleDeferredThread();
-    }
-
-#if defined(CONFIG_BT_SMP)
-    if (config.bluetooth.mode != meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN) {
-        bt_conn_auth_cb_register(&auth_cb);
-        bt_conn_auth_info_cb_register(&auth_info_cb);
-    }
-#endif /* CONFIG_BT_SMP */
-
-    if (!bt_initialized) {
-        int err = bt_enable(NULL);
-        if (err) {
-            LOG_ERROR("BLE enable failed: %d", err);
-            return;
-        }
-        bt_initialized = true;
-        LOG_INFO("BLE stack enabled");
-    }
-
-    const char *name = getDeviceName();
-    bt_set_name(name);
-
     ble_enabled = false;
     LOG_INFO("BLE initialized, advertising stopped (startDisabled)");
 }
