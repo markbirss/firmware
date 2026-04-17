@@ -2,17 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(pio run:*)",
-      "Bash(\"/c/Users/cvald/.platformio/penv/Scripts/pio.exe\" run -e wiznet_5500_evb_pico2_e22)",
-      "WebSearch",
-      "Read(//tmp/**)",
-      "Bash(powershell.exe -Command 'Get-Process | Where-Object { $_.Name -match '\\\\''JLink|jlink|putty|PuTTY|tera|minicom|serial|picocom|pio|python|python3'\\\\'' } | Select-Object Id, Name, CPU | Format-Table')",
-      "Bash(powershell.exe -Command \"Stop-Process -Name JLink -Force 2>/dev/null; Stop-Process -Id 23172 -Force 2>/dev/null; Stop-Process -Id 13500 -Force 2>/dev/null; Stop-Process -Id 22048 -Force 2>/dev/null; Stop-Process -Id 30240 -Force 2>/dev/null; Stop-Process -Id 36804 -Force 2>/dev/null; Write-Output 'done'\")",
-      "Bash(grep -v \"^$\")",
-      "Bash(~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm.exe \".pio/build/nrf54l15dk/firmware-nrf54l15dk-2.7.22.0d66fe2\")",
-      "Bash(~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-addr2line.exe -e \".pio/build/nrf54l15dk/firmware-nrf54l15dk-2.7.22.0d66fe2\" -f 0x28354)",
-      "Bash(~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-addr2line.exe -e \".pio/build/nrf54l15dk/firmware-nrf54l15dk-2.7.22.0d66fe2\" -f 0x18C68 ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm.exe \".pio/build/nrf54l15dk/firmware-nrf54l15dk-2.7.22.0d66fe2\")",
-      "Read(//c/Users/cvald/Documents/VSC/firmware/**)",
-      "Bash(~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-addr2line.exe -e \".pio/build/nrf54l15dk/firmware-nrf54l15dk-2.7.22.0d66fe2\" -f 0x2829A)"
+      "Bash(\"/c/Users/cvald/.platformio/penv/Scripts/pio.exe\" run -e wiznet_5500_evb_pico2_e22)"
     ]
   }
 }
