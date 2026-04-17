@@ -40,6 +40,26 @@ extern "C" void k_sys_fatal_error_handler(unsigned int reason, const struct arch
     saved_crash.cfsr = *((volatile uint32_t *)0xE000ED28U);
     printk("[nrf54l15] FATAL reason=%u pc=0x%08x lr=0x%08x cfsr=0x%08x\n",
            reason, saved_crash.pc, saved_crash.lr, saved_crash.cfsr);
+
+    // Walk the failing thread's stack and print any word that looks like a
+    // Thumb code address (0x1000 — flash end, with the Thumb-mode low bit set).
+    // The Cortex-M exception frame at PSP holds r0,r1,r2,r3,r12,lr,pc,xpsr
+    // (8 words); deeper words are the caller's saved frame, which gives a
+    // crude but useful poor-man's backtrace when CONFIG_DEBUG_COREDUMP is off.
+    // Found the BLE-init bad_alloc → abort() chain (heap exhaustion under
+    // CONFIG_BT_BUF_ACL_RX_SIZE=251) when the fault dump alone showed only
+    // abort itself.  Cheap (~150 B of code) and silent until a fault.
+    uint32_t psp;
+    __asm__ volatile("mrs %0, psp" : "=r"(psp));
+    printk("[nrf54l15] PSP=0x%08x — stack walk:\n", psp);
+    uint32_t *sp = (uint32_t *)psp;
+    for (int i = 0; i < 96; i++) {
+        uint32_t v = sp[i];
+        if (v >= 0x00001000 && v < 0x00080000 && (v & 1)) {
+            printk("[nrf54l15]   sp[%d]=0x%08x (code)\n", i, v);
+        }
+    }
+
     k_fatal_halt(reason);
 }
 
