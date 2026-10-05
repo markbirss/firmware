@@ -76,7 +76,7 @@ static const uint8_t SCK = PIN_SPI_SCK;
 
 #define LORA_DIO0 RADIOLIB_NC
 #define LORA_RESET 64
-#define LORA_DIO1 70 // IRQ
+#define LORA_DIO1 2 // IRQ - Delivers sub-microsecond hardware interrupts via GPIOTE
 #define LORA_DIO2 67 // BUSY
 #define LORA_DIO3 RADIOLIB_NC
 
